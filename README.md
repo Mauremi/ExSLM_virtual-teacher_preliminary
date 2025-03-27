@@ -9,7 +9,6 @@
 
 - 涂瑞峰：上海交通大学电子信息与电气工程学院2024级本科生。
 - 陈欣怡：上海交通大学巴黎卓越工程师学院2024级本科生。
-- 房郁超：上海交通大学电子信息与电气工程学院2024级本科生。
 
 # 更新讯息
 [20250327] Chinese texts can be generated sentence by sentence in bilingual mode.
