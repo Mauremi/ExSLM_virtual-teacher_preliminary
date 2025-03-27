@@ -7,9 +7,9 @@
 # 作者信息
 *排名不分先后。*
 
-- 涂瑞峰：上海交通大学集成电路学院2024级本科生。
+- 涂瑞峰：上海交通大学电子信息与电气工程学院2024级本科生。
 - 陈欣怡：上海交通大学巴黎卓越工程师学院2024级本科生。
-- 房御超：上海交通大学电子信息与电气工程学院2024级本科生。
+- 房郁超：上海交通大学电子信息与电气工程学院2024级本科生。
 
 # 更新讯息
 [20250327] Chinese texts can be generated sentence by sentence in bilingual mode.
@@ -69,7 +69,7 @@ pip install -r "requirements_for_macmps.txt"
 在安装好所需的库之后，我们可以通过以下命令运行模型：
 
 ```shell
-python relavant-path-to-file/app2.py
+python app2.py
 ```
 
 或者也可以通过其他方式运行`app.py`文件。
