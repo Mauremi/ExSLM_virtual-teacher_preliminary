@@ -37,7 +37,7 @@ Simplified the file "claude3_promps.py".
 # 文件说明
 - 文件夹 graph/ ：用以存储在多模态中使用的图片。 文件夹中提供了两个涉及数学问题的图片。若用户有其他图片，请拖入这个文件夹中使用。
 
-- app2.py：主程序，包含所有功能的所有代码。启动项目时，运行这个文件即可。
+- app.py：主程序，包含所有功能的所有代码。启动项目时，运行这个文件即可。
 
 - api_request_schema.py：这是亚马逊支持的模型列表以及参数设置的配置文件，一般勿动。
 
@@ -68,7 +68,7 @@ pip install -r "requirements_for_macmps.txt"
 在安装好所需的库之后，我们可以通过以下命令运行模型：
 
 ```shell
-python app2.py
+python app.py
 ```
 
 或者也可以通过其他方式运行`app.py`文件。
