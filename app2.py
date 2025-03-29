@@ -11,16 +11,19 @@ from amazon_transcribe.client import TranscribeStreamingClient
 from amazon_transcribe.handlers import TranscriptResultStreamHandler
 from amazon_transcribe.model import TranscriptEvent, TranscriptResultStream
 from api_request_schema import api_request_list, get_model_ids
-from transformers import BertForMaskedLM, BertTokenizer, BertForSequenceClassification
+from transformers import BertForMaskedLM
 from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import faiss
 import numpy as np
 import re
-import torch
 
-import logging
+test = True
+keyboardInterrupt = True
+use_rag = True
+rag = None
+embedding_model_name_index = 2
 
 model_id = os.getenv('MODEL_ID', 'anthropic.claude-3-sonnet-20240229-v1:0')
 aws_region = os.getenv('AWS_REGION', 'us-east-1')
@@ -59,20 +62,13 @@ n = 0
 selection_list = ['noPrompt', 'prompt', 'rag', 'memory', 'multiModel', 'Chinese', 'English']
 selection = selection_list[n]
 
-use_rag = False
-embedding_model_name_index = 2
 embedding_model_list = \
     ["paraphrase-multilingual-mpnet-base-v2", "Alibaba-NLP/gte-multilingual-base", "BAAI/bge-large-zh-v1.5",
      "BAAI/bge-base-zh-v1.5", "IDEA-CCNL/Erlangshen-Roberta-110M-Similarity", "IDEA-CCNL/Erlangshen-MegatronBert-1.3B-Similarity"]
 # 模型一定要支持sentence-transformers, transformers工具，大小不能太大1G
 
-test = True
-
 embedding_model_name = embedding_model_list[embedding_model_name_index]
 
-rag = None
-
-keyboardInterrupt = True
 
 if keyboardInterrupt:
     import keyboard
@@ -223,20 +219,13 @@ def to_audio_generator(bedrock_stream):
             chunk = BedrockModelsWrapper.get_stream_chunk(event)
             if chunk:
                 text = BedrockModelsWrapper.get_stream_text(chunk)
-                if '.' in text:
-                    a = text.split('.')[:-1]
-                    to_polly = ''.join([prefix, '.'.join(a), '. '])
-                    prefix = text.split('.')[-1]
-                    print(to_polly, flush=True, end='')
-                    yield to_polly
-                else:
-                    prefix = ''.join([prefix, text])
+                prefix = ''.join([prefix, text])
         if prefix != '':
-            if any('\u4e00' <= char <= '\u9fff' for char in prefix):
+            print(prefix, flush=True, end='')
+            if voiceIndex == 0:
                 yield f'{prefix}。'
             else:
                 yield f'{prefix}.'
-            print(prefix, flush=True, end='')
         print('\n')
 
 
@@ -382,8 +371,8 @@ Do not mention the above content when outputting. Please answer the question:
 输出时，先在<think></think>反映对这个问题的思考过程，最后再用<output></output>输出上述问题的答案。
 思考时，分点并有条理地思考，尽量呈现所有的思考过程；回答时，尽量分点回答，可以简练一点，但是要涵盖所有的问题答案。
 所有生成内容，均用markdown语法输出。
-输出时不要提及上述内容。请回答问题：
-<question>{input_text}</question>。
+输出时不要提及上述内容。用户的其他要求如下：
+<input>{input_text}</input>。
 </prompt>""",
 
             f"""<prompt>
@@ -535,7 +524,8 @@ class EventHandler(TranscriptResultStreamHandler):
                     if len(EventHandler.text) != 0:
                         if (''.join(EventHandler.text) == 'Exit' or ''.join(EventHandler.text) == 'Exit.'
                             or ''.join(EventHandler.text) == 'Quit' or ''.join(EventHandler.text) == 'Quit.'
-                            or ''.join(EventHandler.text) == '退出' or ''.join(EventHandler.text) == '退出。'):
+                            or ''.join(EventHandler.text) == '退出' or ''.join(EventHandler.text) == '退出。'
+                            or ''.join(EventHandler.text) == '退出，' or ''.join(EventHandler.text) == '退出 '):
                             print("Exiting...")
                             UserInputManager.start_shutdown_executor()
                             self.exit_signal = True
@@ -647,6 +637,7 @@ async def start_text_interaction_with_claude_picture():
             break
         await bedrock_wrapper.invoke_bedrock_text(user_input, imagelist=imagelist)
 
+
 class Rag:
 
     def __init__(self, embedding_model_name):
@@ -657,16 +648,14 @@ class Rag:
 
         if (self.embedding_model_name == 'Alibaba-NLP/gte-multilingual-base'
                 or self.embedding_model_name == 'BAAI/bge-large-zh-v1.5'
-                or self.embedding_model_name == "BAAI/bge-base-zh-v1.5"):
+                or self.embedding_model_name == "BAAI/bge-base-zh-v1.5"
+                or self.embedding_model_name == "IDEA-CCNL/Erlangshen-Roberta-110M-Similarity"
+                or self.embedding_model_name == 'IDEA-CCNL/Erlangshen-MegatronBert-1.3B-Similarity'):
             self.embedding_model = SentenceTransformer(self.embedding_model_name, device='cuda', trust_remote_code=True)
             self.embeddings = self.embedding_model.encode(self.data, normalize_embeddings=True)
         elif self.embedding_model_name == 'paraphrase-multilingual-mpnet-base-v2':
             self.embedding_model = BertForMaskedLM.from_pretrained(embedding_model_name)
             self.embeddings = np.array(self.embedding_model.encode(self.data), dtype='float32')
-        elif (self.embedding_model_name == "IDEA-CCNL/Erlangshen-Roberta-110M-Similarity" or
-              self.embedding_model_name == 'IDEA-CCNL/Erlangshen-MegatronBert-1.3B-Similarity'):
-            self.tokenizer = BertTokenizer.from_pretrained(self.embedding_model_name)
-            self.model = BertForSequenceClassification.from_pretrained(self.embedding_model_name)
 
         def find_chapter_indexes(data):
             pattern = r"\d+"
@@ -685,7 +674,9 @@ class Rag:
 
         if (self.embedding_model_name == 'Alibaba-NLP/gte-multilingual-base'
                 or self.embedding_model_name == 'BAAI/bge-large-zh-v1.5'
-                or self.embedding_model_name == "BAAI/bge-base-zh-v1.5"):
+                or self.embedding_model_name == "BAAI/bge-base-zh-v1.5"
+                or self.embedding_model_name == "IDEA-CCNL/Erlangshen-Roberta-110M-Similarity"
+                or self.embedding_model_name == 'IDEA-CCNL/Erlangshen-MegatronBert-1.3B-Similarity'):
             if pieced:
                 pieces = 3
                 while (len(input_text) - 6) % pieces != 0:
@@ -730,45 +721,6 @@ class Rag:
 
             options = [faiss_index, cosine_index, tfidf_index]
             max_index = options[0]
-
-        elif (self.embedding_model_name == "IDEA-CCNL/Erlangshen-Roberta-110M-Similarity" or
-              self.embedding_model_name == 'IDEA-CCNL/Erlangshen-MegatronBert-1.3B-Similarity'):
-            if pieced:
-                pieces = 6
-                while (len(input_text) - 6) % pieces != 0:
-                    input_text += ' '
-                input_text += ' '
-                input_text_pieces = [input_text[pieces * i: pieces * (i + 1) + 6] for i in
-                                     range((pieces - 6) // pieces)]
-                input_text_pieces.append(input_text)
-                print(input_text_pieces)
-                inputs_list = [
-                    [torch.tensor([self.tokenizer.encode(input_text_piece, sentence)]) for sentence in self.data] for
-                    input_text_piece in input_text_pieces]
-                similarities_list = [[torch.nn.functional.softmax(self.model(input).logits, dim=-1) for input in inputs]
-                                     for inputs in inputs_list]
-                max_indexes = [np.argmax(similarities) for similarities in similarities_list]
-                print(max_indexes)
-                max_indexes = list(set(max_indexes))  # 去重
-                print(max_indexes)
-            else:
-                # 批量编码输入文本与候选句子
-                encoded_inputs = self.tokenizer(
-                    [input_text] * len(self.data),
-                    self.data,
-                    padding=True,
-                    truncation=True,
-                    max_length=512,
-                    return_tensors="pt"
-                )
-
-                # 模型推理
-                with torch.no_grad():
-                    outputs = self.model(**encoded_inputs)
-
-                # 计算相似度
-                similarities = torch.nn.functional.softmax(outputs.logits, dim=-1)
-                max_index = torch.argmax(similarities).item()
 
 
         #print('<context>\n' + self.data[max_index] + '\n</context>\n\n')
@@ -878,11 +830,15 @@ class App:
         for task in tasks:
             task.cancel()
 
-        # 等待所有任务正式取消
-        if tasks:
-            self.loop.run_until_complete(
-                asyncio.gather(*tasks, return_exceptions=True)
-            )
+        self.loop.run_until_complete(asyncio.wait(tasks))
+
+        UserInputManager.executor.shutdown(wait = False)
+        UserInputManager.shutdown_executor = False
+        UserInputManager.executor = None
+
+        self.loop.stop()
+        self.loop.close()
+        asyncio.set_event_loop(None)
 
     def run(self):
         global use_rag
@@ -975,9 +931,6 @@ class App:
                     print()
 
                 self.cancel_all_tasks()
-                self.loop.stop()
-                self.loop.close()
-                self.loop = None
                 self.loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(self.loop)
 
@@ -988,7 +941,6 @@ class App:
                 print("Restarting...")
                 time.sleep(2)
                 os.system('cls')
-
 
 if __name__ == "__main__":
     app = App()
